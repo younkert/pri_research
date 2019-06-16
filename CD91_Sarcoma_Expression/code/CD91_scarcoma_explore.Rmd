@@ -1,0 +1,70 @@
+---
+title: "CD91_sarcoma_explore.Rmd"
+author: "Teddy"
+date: "06/09/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## CD91 Sarcoma Exploration
+This code downloads the TCGA Sarcoma datasets from the cBioportal and looks at expression data related to the CD91 gene. The data will be split apart in multiple ways to compare disease status and related metrics to the level of CD91 mRNA expression.
+
+
+### Set up environment
+Here I load the relevant packages and set environment variables. Specialty package `cgdsr` is loaded from the [cBioportal](http://www.cbioportal.org/) website. 
+```{r set_envir, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE}
+#'[Loading_package:]
+require(pacman)
+p_load(data.table, ggplot2, cgdsr)
+
+#'[Set_variables:]
+#' @none to be declared
+```
+
+
+### Download the datasets
+Use the cBio package to download TCGA PanCancer Atlas sarcoma cancer data from [here](http://www.cbioportal.org/study/summary?id=sarc_tcga_pan_can_atlas_2018).
+```{r harvest_data, echo = FALSE, warning = FALSE, message = FALSE, error = FALSE}
+#' @create the CGDS object
+mycgds = CGDS("https://www.cbioportal.org/")
+
+test(mycgds)
+
+#' @extract cancer studies list and find sarcoma-related items
+studies_list <- data.table(getCancerStudies(mycgds))
+sarc_studs <- studies_list[grepl(pattern = "sarc", x = cancer_study_id)]
+
+#' @determine the study ID for the sarcoma studies we want
+target_study <- sarc_studs[cancer_study_id == "sarc_tcga_pan_can_atlas_2018"]
+target_study_id <- paste(target_study[1,1])
+
+#' @get caselist (collection of samples) for our 
+sarc_caselist <- getCaseLists(mycgds, target_study_id)
+sarc_caselist_id <- paste(sarc_caselist[1,1])
+```
+
+
+### Pull Sarcoma Samples
+Use the downloaded data to find the TCGA sarcoma data and isolate the RNA-seq expression data for all samples with such data.
+``` {r pull_samples}
+#' @get available genetic profiles
+sarc_genetic_profiles_RNAseq <- getGeneticProfiles(mycgds, target_study_id)[2,1]
+sarc_genetic_profiles_muts <- getGeneticProfiles(mycgds, target_study_id)[5,1]
+
+#' @get data slices for a specified list of genes, genetic profile and case list
+RNAseq_profile_data <- getProfileData(mycgds, c('LRP1'), sarc_genetic_profiles_RNAseq, sarc_caselist_id)
+MUT_profile_data <- getProfileData(mycgds, c('LRP1'), sarc_genetic_profiles_muts, sarc_caselist_id)
+
+#' @get clinical data for the target sarcoma case list
+sarc_clinical_data <- getClinicalData(mycgds,sarc_caselist_id)
+```
+
+
+### Visual analysis
+systematically visualize all aspects of data.
+```{r viz}
+
+```
