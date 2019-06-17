@@ -49,17 +49,61 @@ sarc_caselist_id <- paste(sarc_caselist[1,1])
 
 ### Pull Sarcoma Samples
 Use the downloaded data to find the TCGA sarcoma data and isolate the RNA-seq expression data for all samples with such data.
-``` {r pull_samples}
-#' @get available genetic profiles
+```{r pull_samples}
+
+#' @get available genetic profiles strings
 sarc_genetic_profiles_RNAseq <- getGeneticProfiles(mycgds, target_study_id)[2,1]
 sarc_genetic_profiles_muts <- getGeneticProfiles(mycgds, target_study_id)[5,1]
 
+
+
 #' @get data slices for a specified list of genes, genetic profile and case list
-RNAseq_profile_data <- getProfileData(mycgds, c('LRP1'), sarc_genetic_profiles_RNAseq, sarc_caselist_id)
-MUT_profile_data <- getProfileData(mycgds, c('LRP1'), sarc_genetic_profiles_muts, sarc_caselist_id)
+RNAseq_profile_data <- getProfileData.CGDS(x = mycgds, 
+                                           genes = c('LRP1'), 
+                                           geneticProfiles = sarc_genetic_profiles_RNAseq, 
+                                           caseList = sarc_caselist_id)
+
+
+MUT_profile_data <- getProfileData.CGDS(x = mycgds, 
+                                        genes = c('LRP1'), 
+                                        geneticProfiles = sarc_genetic_profiles_muts, 
+                                        caseList = sarc_caselist_id)
+
 
 #' @get clinical data for the target sarcoma case list
 sarc_clinical_data <- getClinicalData(mycgds,sarc_caselist_id)
+
+#' @get available mutation data for the sarcoma cancer study
+sarc_mutation_data <- getMutationData.CGDS(x = mycgds, 
+                                           caseList = sarc_caselist_id, 
+                                           geneticProfile = sarc_genetic_profiles_muts, 
+                                           genes = 'LRP1')
+```
+### Create combined set
+We have pulled all of the expression data, mutation data, and clinical data for all out samples in the target sarcoma studies. Now we need to combine them into a master sheet
+```{r combino}
+#'[format the data]
+#' @create case_id column and convert to data.table
+RNAseq_profile_data$case_id <- row.names(x = RNAseq_profile_data)
+RNAseq_profile_data <- data.table(RNAseq_profile_data)
+
+#' @create case_id column and convert to data.table
+MUT_profile_data$case_id <- row.names(x = MUT_profile_data)
+MUT_profile_data <- data.table(MUT_profile_data)
+
+#' @format data and remove non-important rows
+sarc_clinical_data$case_id <- row.names(x = sarc_clinical_data)
+sarc_clinical_data <- data.table(sarc_clinical_data)
+sarc_clinical_data <- sarc_clinical_data[,.(case_id, AGE, ANEUPLOIDY_SCORE, CANCER_TYPE, 
+                                            CANCER_TYPE_ACRONYM, CANCER_TYPE_DETAILED, 
+                                            DAYS_LAST_FOLLOWUP, DFS_MONTHS, DFS_STATUS, 
+                                            DSS_MONTHS, DSS_STATUS, ETHNICITY, 
+                                            FRACTION_GENOME_ALTERED, MUTATION_COUNT,
+                                            NEW_TUMOR_EVENT_AFTER_INITIAL_TREATMENT,
+                                            PFS_MONTHS, PFS_STATUS, RACE, SEX, 
+                                            TUMOR_TISSUE_SITE, TUMOR_TYPE)]
+#' @format the mutation data
+sarc_mutation_data <- data.table(sarc_mutation_data)
 ```
 
 
