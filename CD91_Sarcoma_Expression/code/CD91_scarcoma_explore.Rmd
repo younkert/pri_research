@@ -71,7 +71,7 @@ MUT_profile_data <- getProfileData.CGDS(x = mycgds,
 
 
 #' @get clinical data for the target sarcoma case list
-sarc_clinical_data <- getClinicalData(mycgds,sarc_caselist_id)
+sarc_clinical_data <- getClinicalData.CGDS(x = mycgds, caseList = sarc_caselist_id)
 
 #' @get available mutation data for the sarcoma cancer study
 sarc_mutation_data <- getMutationData.CGDS(x = mycgds, 
@@ -86,10 +86,13 @@ We have pulled all of the expression data, mutation data, and clinical data for 
 #' @create case_id column and convert to data.table
 RNAseq_profile_data$case_id <- row.names(x = RNAseq_profile_data)
 RNAseq_profile_data <- data.table(RNAseq_profile_data)
+setnames(x = RNAseq_profile_data, old = "LRP1", new = "LRP1_mrna_TPM")
 
 #' @create case_id column and convert to data.table
-MUT_profile_data$case_id <- row.names(x = MUT_profile_data)
-MUT_profile_data <- data.table(MUT_profile_data)
+# MUT_profile_data$case_id <- row.names(x = MUT_profile_data)
+# MUT_profile_data <- data.table(MUT_profile_data)
+# setnames(x = MUT_profile_data, old = "LRP1", new = "mutation")
+#' [not needed]
 
 #' @format data and remove non-important rows
 sarc_clinical_data$case_id <- row.names(x = sarc_clinical_data)
@@ -100,10 +103,17 @@ sarc_clinical_data <- sarc_clinical_data[,.(case_id, AGE, ANEUPLOIDY_SCORE, CANC
                                             DSS_MONTHS, DSS_STATUS, ETHNICITY, 
                                             FRACTION_GENOME_ALTERED, MUTATION_COUNT,
                                             NEW_TUMOR_EVENT_AFTER_INITIAL_TREATMENT,
+                                            OS_MONTHS, OS_STATUS,
                                             PFS_MONTHS, PFS_STATUS, RACE, SEX, 
                                             TUMOR_TISSUE_SITE, TUMOR_TYPE)]
 #' @format the mutation data
 sarc_mutation_data <- data.table(sarc_mutation_data)
+sarc_mutation_data <- sarc_mutation_data[,.(case_id, mutation_type, amino_acid_change)]
+
+#' [Merge the datasets into one]
+#' @merge RNAseq and MUT profile
+full_data <- merge(RNAseq_profile_data, sarc_mutation_data, by = "case_id", all.x = TRUE)
+full_data <- merge(full_data, sarc_clinical_data, by = "case_id", all.x = TRUE)
 ```
 
 
