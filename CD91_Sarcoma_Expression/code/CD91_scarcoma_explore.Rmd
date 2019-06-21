@@ -64,15 +64,15 @@ sarc_genetic_profiles_muts <- getGeneticProfiles(mycgds, target_study_id)[5,1]
 
 #' @get data slices for a specified list of genes, genetic profile and case list
 RNAseq_profile_data <- getProfileData.CGDS(x = mycgds, 
-                                           genes = c('LRP1'), 
+                                           genes = c('LRP1','CD3E','CD8A','FOXP3','NCAM'), 
                                            geneticProfiles = sarc_genetic_profiles_RNAseq, 
                                            caseList = sarc_caselist_id)
 
 
-MUT_profile_data <- getProfileData.CGDS(x = mycgds, 
-                                        genes = c('LRP1'), 
-                                        geneticProfiles = sarc_genetic_profiles_muts, 
-                                        caseList = sarc_caselist_id)
+# MUT_profile_data <- getProfileData.CGDS(x = mycgds, 
+#                                         genes = c('LRP1'), 
+#                                         geneticProfiles = sarc_genetic_profiles_muts, 
+#                                         caseList = sarc_caselist_id)
 
 
 #' @get clinical data for the target sarcoma case list
@@ -92,6 +92,11 @@ We have pulled all of the expression data, mutation data, and clinical data for 
 RNAseq_profile_data$case_id <- row.names(x = RNAseq_profile_data)
 RNAseq_profile_data <- data.table(RNAseq_profile_data)
 setnames(x = RNAseq_profile_data, old = "LRP1", new = "LRP1_mrna_TPM")
+setnames(x = RNAseq_profile_data, old = "CD3E", new = "CD3E_mrna_TPM")
+setnames(x = RNAseq_profile_data, old = "CD8A", new = "CD8A_mrna_TPM")
+setnames(x = RNAseq_profile_data, old = "FOXP3", new = "FOXP3_mrna_TPM")
+setnames(x = RNAseq_profile_data, old = "NCAM", new = "NCAM_mrna_TPM")
+
 
 #' @create case_id column and convert to data.table
 # MUT_profile_data$case_id <- row.names(x = MUT_profile_data)
