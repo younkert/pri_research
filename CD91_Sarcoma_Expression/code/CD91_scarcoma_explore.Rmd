@@ -64,10 +64,9 @@ sarc_genetic_profiles_muts <- getGeneticProfiles(mycgds, target_study_id)[5,1]
 
 #' @get data slices for a specified list of genes, genetic profile and case list
 RNAseq_profile_data <- getProfileData.CGDS(x = mycgds, 
-                                           genes = c('LRP1','CD3E','CD8A','FOXP3','NCAM'), 
+                                           genes = c('LRP1','CD3E','CD8A','FOXP3','NCAM1'), 
                                            geneticProfiles = sarc_genetic_profiles_RNAseq, 
                                            caseList = sarc_caselist_id)
-
 
 # MUT_profile_data <- getProfileData.CGDS(x = mycgds, 
 #                                         genes = c('LRP1'), 
@@ -84,8 +83,10 @@ sarc_mutation_data <- getMutationData.CGDS(x = mycgds,
                                            geneticProfile = sarc_genetic_profiles_muts, 
                                            genes = 'LRP1')
 ```
+
+
 ### Create combined set
-We have pulled all of the expression data, mutation data, and clinical data for all out samples in the target sarcoma studies. Now we need to combine them into a master sheet
+We have pulled all of the expression data, mutation data, and clinical data for all out samples in the target sarcoma studies. Now we need to combine them into a master sheet. We also do some conversion of values.
 ```{r combino}
 #'[format the data]
 #' @create case_id column and convert to data.table
@@ -95,7 +96,7 @@ setnames(x = RNAseq_profile_data, old = "LRP1", new = "LRP1_mrna_TPM")
 setnames(x = RNAseq_profile_data, old = "CD3E", new = "CD3E_mrna_TPM")
 setnames(x = RNAseq_profile_data, old = "CD8A", new = "CD8A_mrna_TPM")
 setnames(x = RNAseq_profile_data, old = "FOXP3", new = "FOXP3_mrna_TPM")
-setnames(x = RNAseq_profile_data, old = "NCAM", new = "NCAM_mrna_TPM")
+setnames(x = RNAseq_profile_data, old = "NCAM1", new = "NCAM1_mrna_TPM")
 
 
 #' @create case_id column and convert to data.table
@@ -124,11 +125,744 @@ sarc_mutation_data <- sarc_mutation_data[,.(case_id, mutation_type, amino_acid_c
 #' @merge RNAseq and MUT profile
 full_data <- merge(RNAseq_profile_data, sarc_mutation_data, by = "case_id", all.x = TRUE)
 full_data <- merge(full_data, sarc_clinical_data, by = "case_id", all.x = TRUE)
+
+#'[Transform the output into log2 transformed]
+# full_data[, log2_CD3E := log(x = CD3E_mrna_TPM, base = 2)]
+# full_data[, log2_CD8A := log(x = CD8A_mrna_TPM, base = 2)]
+# full_data[, log2_FOXP3 := log(x = FOXP3_mrna_TPM, base = 2)]
+# full_data[, log2_LRP1 := log(x = LRP1_mrna_TPM, base = 2)]
+# full_data[, log2_NCAM1 := log(x = NCAM1_mrna_TPM, base = 2)]
+#' @this will just be done at the plotting stage. having this stuff clogs up datatable with excess
+
+#'[Melt the table long so it plots easily]
+full_data <- melt(data = full_data, id.vars = c(1,7:30), variable.name = "gene", value.name = "expr_TPM")
+full_data[, gene := gsub(pattern = "_mrna_TPM", replacement = "", x = gene)]
+
+#'[Assign labels to samples based on their percentile of LRP1 expression]
+#' @create column for just the LRP1 expression value (needed for quantile making)
+full_data[gene == "LRP1", LRP1_ref := expr_TPM]
+full_data[, LRP1_ref := mean(LRP1_ref, na.rm = T), by = case_id]
+
+#' [assign quantiles based on desired division]
+#' @median
+full_data[, Median := factor(ntile(x = LRP1_ref, n = 2), levels = 2:1)]
+
+#' @tertiles
+full_data[, Tertile := factor(ntile(x = LRP1_ref, n = 3), levels = 3:1)]
+
+#' @quartiles
+# full_data[, Quartile := factor(ntile(x = LRP1_ref, n = 4), levels = 4:1)]
+
+#' @pentiles
+full_data[, Pentile := factor(ntile(x = LRP1_ref, n = 5), levels = 5:1)]
+
+#' @deciles
+# full_data[, Decile := factor(ntile(x = LRP1_ref, n = 10), levels = 10:1)]
+
+#' @remove columns used for the sake of assignment
+full_data[, LRP1_ref := NULL]
 ```
 
 
-### Visual analysis
-systematically visualize all aspects of data.
+### Expression analysis
+Time to systematically visualize all aspects of data.
+
+#### Overall Expression 
+This section shows the mRNA reads in transcripts per million for all the target genes. The faded lines link the same cases across groups. An interactive plot can be produced if requested. 
 ```{r viz}
+library(gridExtra)
+library(plotly)
+
+#' [Create simplified plot dataset]
+p_data_long <- full_data[,.(case_id, Median, Tertile, Pentile, gene, expr_TPM)]
+p_data_long[, expr_TPM := log2(expr_TPM)]
+p_data_wide <- dcast(data = p_data_long, formula = case_id+Median+Tertile+Pentile~gene, value.var = "expr_TPM")
+
+#'[Gene expression scatter plot]
+ggplot(data = p_data_long, mapping = aes(x = gene, y= expr_TPM)) +
+  geom_jitter(position = position_jitter(0.1), shape = 21) +
+  geom_line(aes(group=case_id, color = case_id), alpha = 0.15, show.legend = F) +
+  #geom_dotplot(binaxis = 'y', stackdir = 'center', binwidth = 0.25) +
+  theme_bw() +
+  ylab(expression(log[2]~mRNA~(TPM))) +
+  xlab("Gene") +
+  ggtitle(expression(Sarcoma~Tumor~Gene~Expression~-~RNA~seq~V2~(log[2]))) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# p <- ggplot(data = p_data_long, mapping = aes(x = gene, y= expr_TPM)) +
+#   geom_jitter(position = position_jitter(0.1), shape = 21) +
+#   geom_line(aes(group=case_id, color = case_id), alpha = 0.15, show.legend = F) +
+#   theme_bw() +
+#   xlab("Gene") +
+#   theme(plot.title = element_text(hjust = 0.5))
+# ggplotly(p)
+```
+
+
+#### LRP1 and CD3E
+This section of code examines the relationship between LRP1 expression and CD3E expression based on quantile divisons into:
+* Medians (2 quantiles)
+* Tertiles (3 quantiles)
+* Pentiles (5 quantiles)
+* more quantiles are easy to do if needed.
+The highest number in the quantile corresponds to the highest expression group (e.g. with pentiles, the 5th pentile is the top 20% of log2 fold expressing samples). 
+For each quintile breakdown, two graphs are shown:
+* LEFT: expression amount by group
+* RIGHT: expression of CD3E vs LRP1 scatterplot, plus correlation
+The scatterplot is particularly important to demonstrate how different quantile groups may/may not result in different expression profiles of immune marker genes. It also provides to statistical backing for any claims made.
+```{r cd3e}
+#' [cd3e data set isolation]
+cd3e_long <- p_data_long[gene == "LRP1"| gene == "CD3E"]
+cd3e_long <- cd3e_long[!is.na(expr_TPM)]
+cd3e_long <- cd3e_long[expr_TPM != "NaN"]
+cd3e_long <- cd3e_long[expr_TPM != "-Inf"]
+cd3e_wide <- dcast(data = cd3e_long, formula = case_id+Median+Tertile+Pentile~gene, value.var = "expr_TPM")
+
+#'[Gene Expression grouped by Medians]
+a <- ggplot(data = cd3e_long, 
+            mapping = aes(x = gene, y= expr_TPM, group = Median, color = Median)) +
+      geom_jitter(position = position_jitter(0.1), shape = 21) +
+      geom_line(aes(group = case_id, color = Median), alpha = 0.1) +
+      theme_bw() +
+      ylab(expression(log[2]~mRNA~(TPM))) +
+      xlab("Gene") +
+      ggtitle("LRP1 vs. CD3E | Medians") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+#' @Extract correlation value and p values for overall and for each quartile
+onj <- cor.test(y = cd3e_wide$CD3E, x = cd3e_wide$LRP1)
+p_value <- round(onj$p.value, digits = 4)
+cor_value <- round(onj$estimate, digits = 4)
+
+onj_1 <- cor.test(y = cd3e_wide[Median == "1"]$CD3E, x = cd3e_wide[Median == "1"]$LRP1)
+p_value_1 <- round(onj_1$p.value, digits = 4)
+cor_value_1 <- round(onj_1$estimate, digits = 4)
+
+onj_2 <- cor.test(y = cd3e_wide[Median == 2]$CD3E, x = cd3e_wide[Median == 2]$LRP1)
+p_value_2 <- round(onj_2$p.value, digits = 4)
+cor_value_2 <- round(onj_2$estimate, digits = 4)
+
+b <- ggplot(data = cd3e_wide, 
+       mapping = aes(x = LRP1, y = CD3E)) +
+      geom_point(shape = 21, aes(group = Median, color = Median)) +
+      theme_bw() +
+      ylab("CD3 expression") +
+      xlab("LRP1 expression") +
+      ggtitle("Expression by Expression Matrix") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      geom_smooth(method = "lm", alpha = 0.2, linetype = "dashed", se = F) +
+      geom_smooth(aes(group = Median), method = "lm", alpha = 0.2, linetype = "dashed", color = "red", se = F) +
+      annotate("text", x = 13, y = 10, label = paste("Overall R:", cor_value)) +
+      annotate("text", x = 13, y = 9.5, label = paste("p:", p_value)) +
+      annotate("text", x = 12, y = 4.5, label = paste("R:", cor_value_1)) +
+      annotate("text", x = 12, y = 4, label = paste("p:", p_value_1)) +
+      annotate("text", x = 16, y = 4.5, label = paste("R:", cor_value_2)) +
+      annotate("text", x = 16, y = 4, label = paste("p:", p_value_2))
+grid.arrange(a, b, ncol = 2)
+
+#'[Gene Expression grouped by Tertiles ==============================================]
+c <- ggplot(data = cd3e_long, 
+            mapping = aes(x = gene, y= expr_TPM, group = Tertile, color = Tertile)) +
+      geom_jitter(position = position_jitter(0.1), shape = 21) +
+      geom_line(aes(group = case_id, color = Tertile), alpha = 0.1) +
+      theme_bw() +
+      ylab(expression(log[2]~mRNA~(TPM))) +
+      xlab("Gene") +
+      ggtitle("LRP1 vs. CD3E | Tertiles") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+#' @Extract correlation value and p values for overall and for each quartile
+onj <- cor.test(y = cd3e_wide$CD3E, x = cd3e_wide$LRP1)
+p_value <- round(onj$p.value, digits = 4)
+cor_value <- round(onj$estimate, digits = 4)
+
+onj_1 <- cor.test(y = cd3e_wide[Tertile == "1"]$CD3E, x = cd3e_wide[Tertile == "1"]$LRP1)
+p_value_1 <- round(onj_1$p.value, digits = 4)
+cor_value_1 <- round(onj_1$estimate, digits = 4)
+
+onj_2 <- cor.test(y = cd3e_wide[Tertile == 2]$CD3E, x = cd3e_wide[Tertile == 2]$LRP1)
+p_value_2 <- round(onj_2$p.value, digits = 4)
+cor_value_2 <- round(onj_2$estimate, digits = 4)
+
+onj_3 <- cor.test(y = cd3e_wide[Tertile == 3]$CD3E, x = cd3e_wide[Tertile == 3]$LRP1)
+p_value_3 <- round(onj_3$p.value, digits = 4)
+cor_value_3 <- round(onj_3$estimate, digits = 4)
+
+d <- ggplot(data = cd3e_wide, 
+       mapping = aes(x = LRP1, y = CD3E)) +
+      geom_point(shape = 21, aes(group = Tertile, color = Tertile)) +
+      theme_bw() +
+      ylab("CD3 expression") +
+      xlab("LRP1 expression") +
+      ggtitle("Expression by Expression Matrix") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      geom_smooth(method = "lm", alpha = 0.2, linetype = "dashed", se = F) +
+      geom_smooth(aes(group = Tertile), method = "lm", alpha = 0.2, linetype = "dashed", color = "red", se = F) +
+      annotate("text", x = 13, y = 10, label = paste("Overall R:", cor_value)) +
+      annotate("text", x = 13, y = 9.5, label = paste("p:", p_value)) +
+      annotate("text", x = 12, y = 4.5, label = paste("R:", cor_value_1)) +
+      annotate("text", x = 12, y = 4, label = paste("p:", p_value_1)) +
+      annotate("text", x = 14, y = 4.5, label = paste("R:", cor_value_2)) +
+      annotate("text", x = 14, y = 4, label = paste("p:", p_value_2)) +
+      annotate("text", x = 16, y = 4.5, label = paste("R:", cor_value_3)) +
+      annotate("text", x = 16, y = 4, label = paste("p:", p_value_3))
+grid.arrange(c, d, ncol = 2)
+
+
+#'[Gene Expression grouped by Pentiles ============================================]
+e <- ggplot(data = cd3e_long, 
+            mapping = aes(x = gene, y= expr_TPM, group = Pentile, color = Pentile)) +
+      geom_jitter(position = position_jitter(0.1), shape = 21) +
+      geom_line(aes(group = case_id, color = Pentile), alpha = 0.1) +
+      theme_bw() +
+      ylab(expression(log[2]~mRNA~(TPM))) +
+      xlab("Gene") +
+      ggtitle("LRP1 vs. CD3E | Tertiles") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+#' @Extract correlation value and p values for overall and for each quartile
+onj <- cor.test(y = cd3e_wide$CD3E, x = cd3e_wide$LRP1)
+p_value <- round(onj$p.value, digits = 4)
+cor_value <- round(onj$estimate, digits = 4)
+
+onj_1 <- cor.test(y = cd3e_wide[Pentile == "1"]$CD3E, x = cd3e_wide[Pentile == "1"]$LRP1)
+p_value_1 <- round(onj_1$p.value, digits = 4)
+cor_value_1 <- round(onj_1$estimate, digits = 4)
+
+onj_2 <- cor.test(y = cd3e_wide[Pentile == 2]$CD3E, x = cd3e_wide[Pentile == 2]$LRP1)
+p_value_2 <- round(onj_2$p.value, digits = 4)
+cor_value_2 <- round(onj_2$estimate, digits = 4)
+
+onj_3 <- cor.test(y = cd3e_wide[Pentile == 3]$CD3E, x = cd3e_wide[Pentile == 3]$LRP1)
+p_value_3 <- round(onj_3$p.value, digits = 4)
+cor_value_3 <- round(onj_3$estimate, digits = 4)
+
+onj_4 <- cor.test(y = cd3e_wide[Pentile == 4]$CD3E, x = cd3e_wide[Pentile == 4]$LRP1)
+p_value_4 <- round(onj_4$p.value, digits = 4)
+cor_value_4 <- round(onj_4$estimate, digits = 4)
+
+onj_5 <- cor.test(y = cd3e_wide[Pentile == 5]$CD3E, x = cd3e_wide[Pentile == 5]$LRP1)
+p_value_5 <- round(onj_5$p.value, digits = 4)
+cor_value_5 <- round(onj_5$estimate, digits = 4)
+
+f <- ggplot(data = cd3e_wide, 
+       mapping = aes(x = LRP1, y = CD3E)) +
+      geom_point(shape = 21, aes(group = Pentile, color = Pentile)) +
+      theme_bw() +
+      ylab("CD3 expression") +
+      xlab("LRP1 expression") +
+      ggtitle("Expression by Expression Matrix") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      geom_smooth(method = "lm", alpha = 0.2, linetype = "dashed", se = F) +
+      geom_smooth(aes(group = Pentile), method = "lm", alpha = 0.2, linetype = "dashed", color = "red", se = F) +
+      annotate("text", x = 13.1, y = 10, label = paste("Overall R:", cor_value)) +
+      annotate("text", x = 13.1, y = 9.5, label = paste("p:", p_value)) +
+      annotate("text", x = 11.3, y = 4.5, label = paste("(1)R:", cor_value_1)) +
+      annotate("text", x = 11.3, y = 4, label = paste("(1)p:", p_value_1)) +
+      annotate("text", x = 13, y = 2.5, label = paste("(2)R:", cor_value_2)) +
+      annotate("text", x = 13, y = 2, label = paste("(2)p:", p_value_2)) +
+      annotate("text", x = 14, y = 4.5, label = paste("(3)R:", cor_value_3)) +
+      annotate("text", x = 14, y = 4, label = paste("(3)p:", p_value_3)) +
+      annotate("text", x = 15.2, y = 2.5, label = paste("(4)R:", cor_value_4)) +
+      annotate("text", x = 15.2, y = 2, label = paste("(4)p:", p_value_4)) +
+      annotate("text", x = 16.7, y = 4.5, label = paste("(5)R:", cor_value_5)) +
+      annotate("text", x = 16.7, y = 4, label = paste("(5)p:", p_value_5))
+grid.arrange(e, f, ncol = 2)
 
 ```
+
+
+#### LRP1 and CD8A
+```{r cd8a}
+#' [cd3e data set isolation]
+cd8a_long <- p_data_long[gene == "LRP1"| gene == "CD8A"]
+cd8a_long <- cd8a_long[!is.na(expr_TPM)]
+cd8a_long <- cd8a_long[expr_TPM != "NaN"]
+cd8a_long <- cd8a_long[expr_TPM != "-Inf"]
+cd8a_wide <- dcast(data = cd8a_long, formula = case_id+Median+Tertile+Pentile~gene, value.var = "expr_TPM")
+
+#'[Gene Expression grouped by Medians]
+a1 <- ggplot(data = cd8a_long, 
+            mapping = aes(x = gene, y= expr_TPM, group = Median, color = Median)) +
+      geom_jitter(position = position_jitter(0.1), shape = 21) +
+      geom_line(aes(group = case_id, color = Median), alpha = 0.1) +
+      theme_bw() +
+      ylab(expression(log[2]~mRNA~(TPM))) +
+      xlab("Gene") +
+      ggtitle("LRP1 vs. CD8A | Medians") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+#' @Extract correlation value and p values for overall and for each quartile
+onj <- cor.test(y = cd8a_wide$CD8A, x = cd8a_wide$LRP1)
+p_value <- round(onj$p.value, digits = 4)
+cor_value <- round(onj$estimate, digits = 4)
+
+onj_1 <- cor.test(y = cd8a_wide[Median == "1"]$CD8A, x = cd8a_wide[Median == "1"]$LRP1)
+p_value_1 <- round(onj_1$p.value, digits = 4)
+cor_value_1 <- round(onj_1$estimate, digits = 4)
+
+onj_2 <- cor.test(y = cd8a_wide[Median == 2]$CD8A, x = cd8a_wide[Median == 2]$LRP1)
+p_value_2 <- round(onj_2$p.value, digits = 4)
+cor_value_2 <- round(onj_2$estimate, digits = 4)
+
+b1 <- ggplot(data = cd8a_wide, 
+       mapping = aes(x = LRP1, y = CD8A)) +
+      geom_point(shape = 21, aes(group = Median, color = Median)) +
+      theme_bw() +
+      ylab("CD8A expression") +
+      xlab("LRP1 expression") +
+      ggtitle("Expression by Expression Matrix") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      geom_smooth(method = "lm", alpha = 0.2, linetype = "dashed", se = F) +
+      geom_smooth(aes(group = Median), method = "lm", alpha = 0.2, linetype = "dashed", color = "red", se = F) +
+      annotate("text", x = 13, y = 10, label = paste("Overall R:", cor_value)) +
+      annotate("text", x = 13, y = 9.5, label = paste("p:", p_value)) +
+      annotate("text", x = 12, y = 4.5, label = paste("R:", cor_value_1)) +
+      annotate("text", x = 12, y = 4, label = paste("p:", p_value_1)) +
+      annotate("text", x = 16, y = 4.5, label = paste("R:", cor_value_2)) +
+      annotate("text", x = 16, y = 4, label = paste("p:", p_value_2))
+grid.arrange(a1, b1, ncol = 2)
+
+#'[Gene Expression grouped by Tertiles ==============================================]
+c1 <- ggplot(data = cd8a_long, 
+            mapping = aes(x = gene, y= expr_TPM, group = Tertile, color = Tertile)) +
+      geom_jitter(position = position_jitter(0.1), shape = 21) +
+      geom_line(aes(group = case_id, color = Tertile), alpha = 0.1) +
+      theme_bw() +
+      ylab(expression(log[2]~mRNA~(TPM))) +
+      xlab("Gene") +
+      ggtitle("LRP1 vs. CD8A | Tertiles") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+#' @Extract correlation value and p values for overall and for each quartile
+onj <- cor.test(y = cd8a_wide$CD8A, x = cd8a_wide$LRP1)
+p_value <- round(onj$p.value, digits = 4)
+cor_value <- round(onj$estimate, digits = 4)
+
+onj_1 <- cor.test(y = cd8a_wide[Tertile == "1"]$CD8A, x = cd8a_wide[Tertile == "1"]$LRP1)
+p_value_1 <- round(onj_1$p.value, digits = 4)
+cor_value_1 <- round(onj_1$estimate, digits = 4)
+
+onj_2 <- cor.test(y = cd8a_wide[Tertile == 2]$CD8A, x = cd8a_wide[Tertile == 2]$LRP1)
+p_value_2 <- round(onj_2$p.value, digits = 4)
+cor_value_2 <- round(onj_2$estimate, digits = 4)
+
+onj_3 <- cor.test(y = cd8a_wide[Tertile == 3]$CD8A, x = cd8a_wide[Tertile == 3]$LRP1)
+p_value_3 <- round(onj_3$p.value, digits = 4)
+cor_value_3 <- round(onj_3$estimate, digits = 4)
+
+d1 <- ggplot(data = cd8a_wide, 
+       mapping = aes(x = LRP1, y = CD8A)) +
+      geom_point(shape = 21, aes(group = Tertile, color = Tertile)) +
+      theme_bw() +
+      ylab("CD8A expression") +
+      xlab("LRP1 expression") +
+      ggtitle("Expression by Expression Matrix") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      geom_smooth(method = "lm", alpha = 0.2, linetype = "dashed", se = F) +
+      geom_smooth(aes(group = Tertile), method = "lm", alpha = 0.2, linetype = "dashed", color = "red", se = F) +
+      annotate("text", x = 13, y = 10, label = paste("Overall R:", cor_value)) +
+      annotate("text", x = 13, y = 9.5, label = paste("p:", p_value)) +
+      annotate("text", x = 12, y = 4.5, label = paste("R:", cor_value_1)) +
+      annotate("text", x = 12, y = 4, label = paste("p:", p_value_1)) +
+      annotate("text", x = 14, y = 4.5, label = paste("R:", cor_value_2)) +
+      annotate("text", x = 14, y = 4, label = paste("p:", p_value_2)) +
+      annotate("text", x = 16, y = 4.5, label = paste("R:", cor_value_3)) +
+      annotate("text", x = 16, y = 4, label = paste("p:", p_value_3))
+grid.arrange(c1, d1, ncol = 2)
+
+
+#'[Gene Expression grouped by Pentiles ============================================]
+e1 <- ggplot(data = cd8a_long, 
+            mapping = aes(x = gene, y= expr_TPM, group = Pentile, color = Pentile)) +
+      geom_jitter(position = position_jitter(0.1), shape = 21) +
+      geom_line(aes(group = case_id, color = Pentile), alpha = 0.1) +
+      theme_bw() +
+      ylab(expression(log[2]~mRNA~(TPM))) +
+      xlab("Gene") +
+      ggtitle("LRP1 vs. CD8A | Tertiles") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+#' @Extract correlation value and p values for overall and for each quartile
+onj <- cor.test(y = cd8a_wide$CD8A, x = cd8a_wide$LRP1)
+p_value <- round(onj$p.value, digits = 4)
+cor_value <- round(onj$estimate, digits = 4)
+
+onj_1 <- cor.test(y = cd8a_wide[Pentile == "1"]$CD8A, x = cd8a_wide[Pentile == "1"]$LRP1)
+p_value_1 <- round(onj_1$p.value, digits = 4)
+cor_value_1 <- round(onj_1$estimate, digits = 4)
+
+onj_2 <- cor.test(y = cd8a_wide[Pentile == 2]$CD8A, x = cd8a_wide[Pentile == 2]$LRP1)
+p_value_2 <- round(onj_2$p.value, digits = 4)
+cor_value_2 <- round(onj_2$estimate, digits = 4)
+
+onj_3 <- cor.test(y = cd8a_wide[Pentile == 3]$CD8A, x = cd8a_wide[Pentile == 3]$LRP1)
+p_value_3 <- round(onj_3$p.value, digits = 4)
+cor_value_3 <- round(onj_3$estimate, digits = 4)
+
+onj_4 <- cor.test(y = cd8a_wide[Pentile == 4]$CD8A, x = cd8a_wide[Pentile == 4]$LRP1)
+p_value_4 <- round(onj_4$p.value, digits = 4)
+cor_value_4 <- round(onj_4$estimate, digits = 4)
+
+onj_5 <- cor.test(y = cd8a_wide[Pentile == 5]$CD8A, x = cd8a_wide[Pentile == 5]$LRP1)
+p_value_5 <- round(onj_5$p.value, digits = 4)
+cor_value_5 <- round(onj_5$estimate, digits = 4)
+
+f1 <- ggplot(data = cd8a_wide, 
+       mapping = aes(x = LRP1, y = CD8A)) +
+      geom_point(shape = 21, aes(group = Pentile, color = Pentile)) +
+      theme_bw() +
+      ylab("CD8A expression") +
+      xlab("LRP1 expression") +
+      ggtitle("Expression by Expression Matrix") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      geom_smooth(method = "lm", alpha = 0.2, linetype = "dashed", se = F) +
+      geom_smooth(aes(group = Pentile), method = "lm", alpha = 0.2, linetype = "dashed", color = "red", se = F) +
+      annotate("text", x = 13.1, y = 10, label = paste("Overall R:", cor_value)) +
+      annotate("text", x = 13.1, y = 9.5, label = paste("p:", p_value)) +
+      annotate("text", x = 11.3, y = 4.5, label = paste("(1)R:", cor_value_1)) +
+      annotate("text", x = 11.3, y = 4, label = paste("(1)p:", p_value_1)) +
+      annotate("text", x = 13, y = 2.5, label = paste("(2)R:", cor_value_2)) +
+      annotate("text", x = 13, y = 2, label = paste("(2)p:", p_value_2)) +
+      annotate("text", x = 14, y = 4.5, label = paste("(3)R:", cor_value_3)) +
+      annotate("text", x = 14, y = 4, label = paste("(3)p:", p_value_3)) +
+      annotate("text", x = 15.2, y = 2.5, label = paste("(4)R:", cor_value_4)) +
+      annotate("text", x = 15.2, y = 2, label = paste("(4)p:", p_value_4)) +
+      annotate("text", x = 16.7, y = 4.5, label = paste("(5)R:", cor_value_5)) +
+      annotate("text", x = 16.7, y = 4, label = paste("(5)p:", p_value_5))
+grid.arrange(e1, f1, ncol = 2)
+
+```
+
+
+#### LRP1 and FOXP3
+```{r foxp3}
+#' [cd3e data set isolation]
+foxp3_long <- p_data_long[gene == "LRP1"| gene == "FOXP3"]
+foxp3_long <- foxp3_long[!is.na(expr_TPM)]
+foxp3_long <- foxp3_long[expr_TPM != "NaN"]
+foxp3_long <- foxp3_long[expr_TPM != "-Inf"]
+foxp3_wide <- dcast(data = foxp3_long, formula = case_id+Median+Tertile+Pentile~gene, value.var = "expr_TPM")
+
+#'[Gene Expression grouped by Medians]
+a2 <- ggplot(data = foxp3_long, 
+            mapping = aes(x = gene, y= expr_TPM, group = Median, color = Median)) +
+      geom_jitter(position = position_jitter(0.1), shape = 21) +
+      geom_line(aes(group = case_id, color = Median), alpha = 0.1) +
+      theme_bw() +
+      ylab(expression(log[2]~mRNA~(TPM))) +
+      xlab("Gene") +
+      ggtitle("LRP1 vs. FOXP3 | Medians") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+#' @Extract correlation value and p values for overall and for each quartile
+onj <- cor.test(y = foxp3_wide$FOXP3, x = foxp3_wide$LRP1)
+p_value <- round(onj$p.value, digits = 4)
+cor_value <- round(onj$estimate, digits = 4)
+
+onj_1 <- cor.test(y = foxp3_wide[Median == "1"]$FOXP3, x = foxp3_wide[Median == "1"]$LRP1)
+p_value_1 <- round(onj_1$p.value, digits = 4)
+cor_value_1 <- round(onj_1$estimate, digits = 4)
+
+onj_2 <- cor.test(y = foxp3_wide[Median == 2]$FOXP3, x = foxp3_wide[Median == 2]$LRP1)
+p_value_2 <- round(onj_2$p.value, digits = 4)
+cor_value_2 <- round(onj_2$estimate, digits = 4)
+
+b2 <- ggplot(data = foxp3_wide, 
+       mapping = aes(x = LRP1, y = FOXP3)) +
+      geom_point(shape = 21, aes(group = Median, color = Median)) +
+      theme_bw() +
+      ylab("FOXP3 expression") +
+      xlab("LRP1 expression") +
+      ggtitle("Expression by Expression Matrix") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      geom_smooth(method = "lm", alpha = 0.2, linetype = "dashed", se = F) +
+      geom_smooth(aes(group = Median), method = "lm", alpha = 0.2, linetype = "dashed", color = "red", se = F) +
+      annotate("text", x = 13.1, y = 7, label = paste("Overall R:", cor_value)) +
+      annotate("text", x = 13.1, y = 7.5, label = paste("p:", p_value)) +
+      annotate("text", x = 11.4, y = 2.5, label = paste("(1)R:", cor_value_1)) +
+      annotate("text", x = 11.4, y = 2, label = paste("(1)p:", p_value_1)) +
+      annotate("text", x = 13, y = 0.5, label = paste("(2)R:", cor_value_2)) +
+      annotate("text", x = 13, y = 0, label = paste("(2)p:", p_value_2))
+grid.arrange(a2, b2, ncol = 2)
+
+#'[Gene Expression grouped by Tertiles ==============================================]
+c2 <- ggplot(data = foxp3_long, 
+            mapping = aes(x = gene, y= expr_TPM, group = Tertile, color = Tertile)) +
+      geom_jitter(position = position_jitter(0.1), shape = 21) +
+      geom_line(aes(group = case_id, color = Tertile), alpha = 0.1) +
+      theme_bw() +
+      ylab(expression(log[2]~mRNA~(TPM))) +
+      xlab("Gene") +
+      ggtitle("LRP1 vs. FOXP3 | Tertiles") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+#' @Extract correlation value and p values for overall and for each quartile
+onj <- cor.test(y = foxp3_wide$FOXP3, x = foxp3_wide$LRP1)
+p_value <- round(onj$p.value, digits = 4)
+cor_value <- round(onj$estimate, digits = 4)
+
+onj_1 <- cor.test(y = foxp3_wide[Tertile == "1"]$FOXP3, x = foxp3_wide[Tertile == "1"]$LRP1)
+p_value_1 <- round(onj_1$p.value, digits = 4)
+cor_value_1 <- round(onj_1$estimate, digits = 4)
+
+onj_2 <- cor.test(y = foxp3_wide[Tertile == 2]$FOXP3, x = foxp3_wide[Tertile == 2]$LRP1)
+p_value_2 <- round(onj_2$p.value, digits = 4)
+cor_value_2 <- round(onj_2$estimate, digits = 4)
+
+onj_3 <- cor.test(y = foxp3_wide[Tertile == 3]$FOXP3, x = foxp3_wide[Tertile == 3]$LRP1)
+p_value_3 <- round(onj_3$p.value, digits = 4)
+cor_value_3 <- round(onj_3$estimate, digits = 4)
+
+d2 <- ggplot(data = foxp3_wide, 
+       mapping = aes(x = LRP1, y = FOXP3)) +
+      geom_point(shape = 21, aes(group = Tertile, color = Tertile)) +
+      theme_bw() +
+      ylab("FOXP3 expression") +
+      xlab("LRP1 expression") +
+      ggtitle("Expression by Expression Matrix") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      geom_smooth(method = "lm", alpha = 0.2, linetype = "dashed", se = F) +
+      geom_smooth(aes(group = Tertile), method = "lm", alpha = 0.2, linetype = "dashed", color = "red", se = F) +
+      annotate("text", x = 13.1, y = 7, label = paste("Overall R:", cor_value)) +
+      annotate("text", x = 13.1, y = 7.5, label = paste("p:", p_value)) +
+      annotate("text", x = 11.4, y = 2.5, label = paste("(1)R:", cor_value_1)) +
+      annotate("text", x = 11.4, y = 2, label = paste("(1)p:", p_value_1)) +
+      annotate("text", x = 13, y = 0.5, label = paste("(2)R:", cor_value_2)) +
+      annotate("text", x = 13, y = 0, label = paste("(2)p:", p_value_2)) +
+      annotate("text", x = 14, y = 2.5, label = paste("(3)R:", cor_value_3)) +
+      annotate("text", x = 14, y = 2, label = paste("(3)p:", p_value_3))
+grid.arrange(c2, d2, ncol = 2)
+
+
+#'[Gene Expression grouped by Pentiles ============================================]
+e2 <- ggplot(data = foxp3_long, 
+            mapping = aes(x = gene, y= expr_TPM, group = Pentile, color = Pentile)) +
+      geom_jitter(position = position_jitter(0.1), shape = 21) +
+      geom_line(aes(group = case_id, color = Pentile), alpha = 0.1) +
+      theme_bw() +
+      ylab(expression(log[2]~mRNA~(TPM))) +
+      xlab("Gene") +
+      ggtitle("LRP1 vs. FOXP3 | Tertiles") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+#' @Extract correlation value and p values for overall and for each quartile
+onj <- cor.test(y = foxp3_wide$FOXP3, x = foxp3_wide$LRP1)
+p_value <- round(onj$p.value, digits = 4)
+cor_value <- round(onj$estimate, digits = 4)
+
+onj_1 <- cor.test(y = foxp3_wide[Pentile == "1"]$FOXP3, x = foxp3_wide[Pentile == "1"]$LRP1)
+p_value_1 <- round(onj_1$p.value, digits = 4)
+cor_value_1 <- round(onj_1$estimate, digits = 4)
+
+onj_2 <- cor.test(y = foxp3_wide[Pentile == 2]$FOXP3, x = foxp3_wide[Pentile == 2]$LRP1)
+p_value_2 <- round(onj_2$p.value, digits = 4)
+cor_value_2 <- round(onj_2$estimate, digits = 4)
+
+onj_3 <- cor.test(y = foxp3_wide[Pentile == 3]$FOXP3, x = foxp3_wide[Pentile == 3]$LRP1)
+p_value_3 <- round(onj_3$p.value, digits = 4)
+cor_value_3 <- round(onj_3$estimate, digits = 4)
+
+onj_4 <- cor.test(y = foxp3_wide[Pentile == 4]$FOXP3, x = foxp3_wide[Pentile == 4]$LRP1)
+p_value_4 <- round(onj_4$p.value, digits = 4)
+cor_value_4 <- round(onj_4$estimate, digits = 4)
+
+onj_5 <- cor.test(y = foxp3_wide[Pentile == 5]$FOXP3, x = foxp3_wide[Pentile == 5]$LRP1)
+p_value_5 <- round(onj_5$p.value, digits = 4)
+cor_value_5 <- round(onj_5$estimate, digits = 4)
+
+f2 <- ggplot(data = foxp3_wide, 
+       mapping = aes(x = LRP1, y = FOXP3)) +
+      geom_point(shape = 21, aes(group = Pentile, color = Pentile)) +
+      theme_bw() +
+      ylab("FOXP3 expression") +
+      xlab("LRP1 expression") +
+      ggtitle("Expression by Expression Matrix") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      geom_smooth(method = "lm", alpha = 0.2, linetype = "dashed", se = F) +
+      geom_smooth(aes(group = Pentile), method = "lm", alpha = 0.2, linetype = "dashed", color = "red", se = F) +
+      annotate("text", x = 13.1, y = 7, label = paste("Overall R:", cor_value)) +
+      annotate("text", x = 13.1, y = 7.5, label = paste("p:", p_value)) +
+      annotate("text", x = 11.4, y = 2.5, label = paste("(1)R:", cor_value_1)) +
+      annotate("text", x = 11.4, y = 2, label = paste("(1)p:", p_value_1)) +
+      annotate("text", x = 13, y = 0.5, label = paste("(2)R:", cor_value_2)) +
+      annotate("text", x = 13, y = 0, label = paste("(2)p:", p_value_2)) +
+      annotate("text", x = 14, y = 2.5, label = paste("(3)R:", cor_value_3)) +
+      annotate("text", x = 14, y = 2, label = paste("(3)p:", p_value_3)) +
+      annotate("text", x = 15.2, y = 0.5, label = paste("(4)R:", cor_value_4)) +
+      annotate("text", x = 15.2, y = 0, label = paste("(4)p:", p_value_4)) +
+      annotate("text", x = 16.7, y = 2.5, label = paste("(5)R:", cor_value_5)) +
+      annotate("text", x = 16.7, y = 2, label = paste("(5)p:", p_value_5))
+grid.arrange(e2, f2, ncol = 2)
+```
+
+
+#### LRP1 and NCAM
+```{r ncam1}
+#' [cd3e data set isolation]
+ncam1_long <- p_data_long[gene == "LRP1"| gene == "NCAM1"]
+ncam1_long <- ncam1_long[!is.na(expr_TPM)]
+ncam1_long <- ncam1_long[expr_TPM != "NaN"]
+ncam1_long <- ncam1_long[expr_TPM != "-Inf"]
+ncam1_wide <- dcast(data = ncam1_long, formula = case_id+Median+Tertile+Pentile~gene, value.var = "expr_TPM")
+
+#'[Gene Expression grouped by Medians]
+a3 <- ggplot(data = ncam1_long, 
+            mapping = aes(x = gene, y= expr_TPM, group = Median, color = Median)) +
+      geom_jitter(position = position_jitter(0.1), shape = 21) +
+      geom_line(aes(group = case_id, color = Median), alpha = 0.1) +
+      theme_bw() +
+      ylab(expression(log[2]~mRNA~(TPM))) +
+      xlab("Gene") +
+      ggtitle("LRP1 vs. NCAM1 | Medians") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+#' @Extract correlation value and p values for overall and for each quartile
+onj <- cor.test(y = ncam1_wide$NCAM1, x = ncam1_wide$LRP1)
+p_value <- round(onj$p.value, digits = 4)
+cor_value <- round(onj$estimate, digits = 4)
+
+onj_1 <- cor.test(y = ncam1_wide[Median == "1"]$NCAM1, x = ncam1_wide[Median == "1"]$LRP1)
+p_value_1 <- round(onj_1$p.value, digits = 4)
+cor_value_1 <- round(onj_1$estimate, digits = 4)
+
+onj_2 <- cor.test(y = ncam1_wide[Median == 2]$NCAM1, x = ncam1_wide[Median == 2]$LRP1)
+p_value_2 <- round(onj_2$p.value, digits = 4)
+cor_value_2 <- round(onj_2$estimate, digits = 4)
+
+b3 <- ggplot(data = ncam1_wide, 
+       mapping = aes(x = LRP1, y = NCAM1)) +
+      geom_point(shape = 21, aes(group = Median, color = Median)) +
+      theme_bw() +
+      ylab("NCAM1 expression") +
+      xlab("LRP1 expression") +
+      ggtitle("Expression by Expression Matrix") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      geom_smooth(method = "lm", alpha = 0.2, linetype = "dashed", se = F) +
+      geom_smooth(aes(group = Median), method = "lm", alpha = 0.2, linetype = "dashed", color = "red", se = F) +
+      annotate("text", x = 13.1, y = 12, label = paste("Overall R:", cor_value)) +
+      annotate("text", x = 13.1, y = 12.5, label = paste("p:", p_value)) +
+      annotate("text", x = 11.4, y = 7.5, label = paste("(1)R:", cor_value_1)) +
+      annotate("text", x = 11.4, y = 7, label = paste("(1)p:", p_value_1)) +
+      annotate("text", x = 13, y = 5.5, label = paste("(2)R:", cor_value_2)) +
+      annotate("text", x = 13, y = 5, label = paste("(2)p:", p_value_2))
+grid.arrange(a3, b3, ncol = 2)
+
+#'[Gene Expression grouped by Tertiles ==============================================]
+c3 <- ggplot(data = ncam1_long, 
+            mapping = aes(x = gene, y= expr_TPM, group = Tertile, color = Tertile)) +
+      geom_jitter(position = position_jitter(0.1), shape = 21) +
+      geom_line(aes(group = case_id, color = Tertile), alpha = 0.1) +
+      theme_bw() +
+      ylab(expression(log[2]~mRNA~(TPM))) +
+      xlab("Gene") +
+      ggtitle("LRP1 vs. NCAM1 | Tertiles") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+#' @Extract correlation value and p values for overall and for each quartile
+onj <- cor.test(y = ncam1_wide$NCAM1, x = ncam1_wide$LRP1)
+p_value <- round(onj$p.value, digits = 4)
+cor_value <- round(onj$estimate, digits = 4)
+
+onj_1 <- cor.test(y = ncam1_wide[Tertile == "1"]$NCAM1, x = ncam1_wide[Tertile == "1"]$LRP1)
+p_value_1 <- round(onj_1$p.value, digits = 4)
+cor_value_1 <- round(onj_1$estimate, digits = 4)
+
+onj_2 <- cor.test(y = ncam1_wide[Tertile == 2]$NCAM1, x = ncam1_wide[Tertile == 2]$LRP1)
+p_value_2 <- round(onj_2$p.value, digits = 4)
+cor_value_2 <- round(onj_2$estimate, digits = 4)
+
+onj_3 <- cor.test(y = ncam1_wide[Tertile == 3]$NCAM1, x = ncam1_wide[Tertile == 3]$LRP1)
+p_value_3 <- round(onj_3$p.value, digits = 4)
+cor_value_3 <- round(onj_3$estimate, digits = 4)
+
+d3 <- ggplot(data = ncam1_wide, 
+       mapping = aes(x = LRP1, y = NCAM1)) +
+      geom_point(shape = 21, aes(group = Tertile, color = Tertile)) +
+      theme_bw() +
+      ylab("NCAM1 expression") +
+      xlab("LRP1 expression") +
+      ggtitle("Expression by Expression Matrix") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      geom_smooth(method = "lm", alpha = 0.2, linetype = "dashed", se = F) +
+      geom_smooth(aes(group = Tertile), method = "lm", alpha = 0.2, linetype = "dashed", color = "red", se = F) +
+      annotate("text", x = 13.1, y = 12, label = paste("Overall R:", cor_value)) +
+      annotate("text", x = 13.1, y = 12.5, label = paste("p:", p_value)) +
+      annotate("text", x = 11.4, y = 7.5, label = paste("(1)R:", cor_value_1)) +
+      annotate("text", x = 11.4, y = 7, label = paste("(1)p:", p_value_1)) +
+      annotate("text", x = 13, y = 5.5, label = paste("(2)R:", cor_value_2)) +
+      annotate("text", x = 13, y = 5, label = paste("(2)p:", p_value_2)) +
+      annotate("text", x = 14, y = 7.5, label = paste("(3)R:", cor_value_3)) +
+      annotate("text", x = 14, y = 7, label = paste("(3)p:", p_value_3)) 
+grid.arrange(c3, d3, ncol = 2)
+
+
+#'[Gene Expression grouped by Pentiles ============================================]
+e3 <- ggplot(data = ncam1_long, 
+            mapping = aes(x = gene, y= expr_TPM, group = Pentile, color = Pentile)) +
+      geom_jitter(position = position_jitter(0.1), shape = 21) +
+      geom_line(aes(group = case_id, color = Pentile), alpha = 0.1) +
+      theme_bw() +
+      ylab(expression(log[2]~mRNA~(TPM))) +
+      xlab("Gene") +
+      ggtitle("LRP1 vs. NCAM1 | Tertiles") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+#' @Extract correlation value and p values for overall and for each quartile
+onj <- cor.test(y = ncam1_wide$NCAM1, x = ncam1_wide$LRP1)
+p_value <- round(onj$p.value, digits = 4)
+cor_value <- round(onj$estimate, digits = 4)
+
+onj_1 <- cor.test(y = ncam1_wide[Pentile == "1"]$NCAM1, x = ncam1_wide[Pentile == "1"]$LRP1)
+p_value_1 <- round(onj_1$p.value, digits = 4)
+cor_value_1 <- round(onj_1$estimate, digits = 4)
+
+onj_2 <- cor.test(y = ncam1_wide[Pentile == 2]$NCAM1, x = ncam1_wide[Pentile == 2]$LRP1)
+p_value_2 <- round(onj_2$p.value, digits = 4)
+cor_value_2 <- round(onj_2$estimate, digits = 4)
+
+onj_3 <- cor.test(y = ncam1_wide[Pentile == 3]$NCAM1, x = ncam1_wide[Pentile == 3]$LRP1)
+p_value_3 <- round(onj_3$p.value, digits = 4)
+cor_value_3 <- round(onj_3$estimate, digits = 4)
+
+onj_4 <- cor.test(y = ncam1_wide[Pentile == 4]$NCAM1, x = ncam1_wide[Pentile == 4]$LRP1)
+p_value_4 <- round(onj_4$p.value, digits = 4)
+cor_value_4 <- round(onj_4$estimate, digits = 4)
+
+onj_5 <- cor.test(y = ncam1_wide[Pentile == 5]$NCAM1, x = ncam1_wide[Pentile == 5]$LRP1)
+p_value_5 <- round(onj_5$p.value, digits = 4)
+cor_value_5 <- round(onj_5$estimate, digits = 4)
+
+f3 <- ggplot(data = ncam1_wide, 
+       mapping = aes(x = LRP1, y = NCAM1)) +
+      geom_point(shape = 21, aes(group = Pentile, color = Pentile)) +
+      theme_bw() +
+      ylab("NCAM1 expression") +
+      xlab("LRP1 expression") +
+      ggtitle("Expression by Expression Matrix") +
+      theme(plot.title = element_text(hjust = 0.5)) +
+      geom_smooth(method = "lm", alpha = 0.2, linetype = "dashed", se = F) +
+      geom_smooth(aes(group = Pentile), method = "lm", alpha = 0.2, linetype = "dashed", color = "red", se = F) +
+      annotate("text", x = 13.1, y = 12, label = paste("Overall R:", cor_value)) +
+      annotate("text", x = 13.1, y = 12.5, label = paste("p:", p_value)) +
+      annotate("text", x = 11.4, y = 7.5, label = paste("(1)R:", cor_value_1)) +
+      annotate("text", x = 11.4, y = 7, label = paste("(1)p:", p_value_1)) +
+      annotate("text", x = 13, y = 5.5, label = paste("(2)R:", cor_value_2)) +
+      annotate("text", x = 13, y = 5, label = paste("(2)p:", p_value_2)) +
+      annotate("text", x = 14, y = 7.5, label = paste("(3)R:", cor_value_3)) +
+      annotate("text", x = 14, y = 7, label = paste("(3)p:", p_value_3)) +
+      annotate("text", x = 15.2, y = 5.5, label = paste("(4)R:", cor_value_4)) +
+      annotate("text", x = 15.2, y = 5, label = paste("(4)p:", p_value_4)) +
+      annotate("text", x = 16.7, y = 7.5, label = paste("(5)R:", cor_value_5)) +
+      annotate("text", x = 16.7, y = 7, label = paste("(5)p:", p_value_5))
+grid.arrange(e3, f3, ncol = 2)
+```
+
+
+### Survival Analysis
+This data comes with information regarding several types of survival and other time series data amenable to Kaplan Meier analysis. This section of code examines these data.
+
+
+### Extraneous Analysis
+This is a feature rich dataset with a lot of extra data like sex data, tumor location data, etc. We can view the expression data by certain quantiles and see if associations between something like `low expression` and `remission` or something related.
+
