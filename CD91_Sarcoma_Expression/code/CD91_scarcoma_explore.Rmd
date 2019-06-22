@@ -3,6 +3,7 @@ title: "CD91_sarcoma_explore.Rmd"
 author: "Teddy"
 date: "06/09/2019"
 output: html_document
+fig_wdith: 12
 ---
 
 ```{r setup, include=FALSE}
@@ -13,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 This code downloads the TCGA Sarcoma datasets from the cBioportal and looks at expression data related to the CD91 gene. The data will be split apart in multiple ways to compare disease status and related metrics to the level of CD91 mRNA expression.
 
 We are looking to extract and explore the data seen here, which has many other features and expressed genes to explore: 
-![cBioPortal LRP1 expression figure.](/Users/Teddy/R/repos/pri_research/CD91_Sarcoma_Expression/images/Screen Shot 2019-06-20 at 1.05.22 PM.png){width=250}
+![cBioPortal LRP1 expression figure.](/Users/Teddy/R/repos/pri_research/CD91_Sarcoma_Expression/images/Screen Shot 2019-06-20 at 1.05.22 PM.png){width=300}
 <br />
 <br />
 Any acronyms or ambiguous abbreviations can be resolved by looking at the Swagger API for cBioPortal <http://oncotree.mskcc.org/cdd/swagger-ui.html#/>
@@ -23,7 +24,7 @@ Here I load the relevant packages and set environment variables. Specialty packa
 ```{r set_envir, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE}
 #'[Loading_package:]
 require(pacman)
-p_load(data.table, ggplot2, cgdsr)
+p_load(data.table, ggplot2, cgdsr, dplyr)
 
 #'[Set_variables:]
 #' @none to be declared
@@ -83,7 +84,8 @@ sarc_mutation_data <- getMutationData.CGDS(x = mycgds,
                                            geneticProfile = sarc_genetic_profiles_muts, 
                                            genes = 'LRP1')
 ```
-
+<br />
+<br />
 
 ### Create combined set
 We have pulled all of the expression data, mutation data, and clinical data for all out samples in the target sarcoma studies. Now we need to combine them into a master sheet. We also do some conversion of values.
@@ -162,14 +164,15 @@ full_data[, Pentile := factor(ntile(x = LRP1_ref, n = 5), levels = 5:1)]
 #' @remove columns used for the sake of assignment
 full_data[, LRP1_ref := NULL]
 ```
-
+<br />
+<br />
 
 ### Expression analysis
 Time to systematically visualize all aspects of data.
 
 #### Overall Expression 
 This section shows the mRNA reads in transcripts per million for all the target genes. The faded lines link the same cases across groups. An interactive plot can be produced if requested. 
-```{r viz}
+```{r viz, fig.width=10}
 library(gridExtra)
 library(plotly)
 
@@ -197,7 +200,8 @@ ggplot(data = p_data_long, mapping = aes(x = gene, y= expr_TPM)) +
 #   theme(plot.title = element_text(hjust = 0.5))
 # ggplotly(p)
 ```
-
+<br />
+<br />
 
 #### LRP1 and CD3E
 This section of code examines the relationship between LRP1 expression and CD3E expression based on quantile divisons into:
@@ -210,7 +214,7 @@ For each quintile breakdown, two graphs are shown:
 * LEFT: expression amount by group
 * RIGHT: expression of CD3E vs LRP1 scatterplot, plus correlation
 The scatterplot is particularly important to demonstrate how different quantile groups may/may not result in different expression profiles of immune marker genes. It also provides to statistical backing for any claims made.
-```{r cd3e}
+```{r cd3e, fig.width=10, fig.height= 7}
 #' [cd3e data set isolation]
 cd3e_long <- p_data_long[gene == "LRP1"| gene == "CD3E"]
 cd3e_long <- cd3e_long[!is.na(expr_TPM)]
@@ -370,10 +374,11 @@ f <- ggplot(data = cd3e_wide,
 grid.arrange(e, f, ncol = 2)
 
 ```
-
+<br />
+<br />
 
 #### LRP1 and CD8A
-```{r cd8a}
+```{r cd8a, fig.width=10, fig.height= 7}
 #' [cd3e data set isolation]
 cd8a_long <- p_data_long[gene == "LRP1"| gene == "CD8A"]
 cd8a_long <- cd8a_long[!is.na(expr_TPM)]
@@ -533,10 +538,11 @@ f1 <- ggplot(data = cd8a_wide,
 grid.arrange(e1, f1, ncol = 2)
 
 ```
-
+<br />
+<br />
 
 #### LRP1 and FOXP3
-```{r foxp3}
+```{r foxp3, fig.width=10, fig.height= 7}
 #' [cd3e data set isolation]
 foxp3_long <- p_data_long[gene == "LRP1"| gene == "FOXP3"]
 foxp3_long <- foxp3_long[!is.na(expr_TPM)]
@@ -695,10 +701,11 @@ f2 <- ggplot(data = foxp3_wide,
       annotate("text", x = 16.7, y = 2, label = paste("(5)p:", p_value_5))
 grid.arrange(e2, f2, ncol = 2)
 ```
-
+<br />
+<br />
 
 #### LRP1 and NCAM
-```{r ncam1}
+```{r ncam1, fig.width=10, fig.height= 7}
 #' [cd3e data set isolation]
 ncam1_long <- p_data_long[gene == "LRP1"| gene == "NCAM1"]
 ncam1_long <- ncam1_long[!is.na(expr_TPM)]
@@ -857,12 +864,20 @@ f3 <- ggplot(data = ncam1_wide,
       annotate("text", x = 16.7, y = 7, label = paste("(5)p:", p_value_5))
 grid.arrange(e3, f3, ncol = 2)
 ```
-
+<br />
+<br />
 
 ### Survival Analysis
 This data comes with information regarding several types of survival and other time series data amenable to Kaplan Meier analysis. This section of code examines these data.
+```{r surv_al, fig.width=10}
 
+```
+<br />
+<br />
 
 ### Extraneous Analysis
 This is a feature rich dataset with a lot of extra data like sex data, tumor location data, etc. We can view the expression data by certain quantiles and see if associations between something like `low expression` and `remission` or something related.
+```{r extra}
+
+```
 
