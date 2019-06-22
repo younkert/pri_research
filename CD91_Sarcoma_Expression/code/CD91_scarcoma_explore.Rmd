@@ -17,7 +17,7 @@ We are looking to extract and explore the data seen here, which has many other f
 ![cBioPortal LRP1 expression figure.](/Users/Teddy/R/repos/pri_research/CD91_Sarcoma_Expression/images/Screen Shot 2019-06-20 at 1.05.22 PM.png){width=300}
 <br />
 <br />
-Any acronyms or ambiguous abbreviations can be resolved by looking at the Swagger API for cBioPortal <http://oncotree.mskcc.org/cdd/swagger-ui.html#/>
+Any acronyms or ambiguous abbreviations can be resolved by looking at the Swagger API for cBioPortal <http://oncotree.mskcc.org/cdd/swagger-ui.html#/clinical-data-dictionary-controller>
 
 ### Set up environment
 Here I load the relevant packages and set environment variables. Specialty package `cgdsr` is loaded from the [cBioportal](http://www.cbioportal.org/) website. 
@@ -870,6 +870,18 @@ grid.arrange(e3, f3, ncol = 2)
 ### Survival Analysis
 This data comes with information regarding several types of survival and other time series data amenable to Kaplan Meier analysis. This section of code examines these data.
 ```{r surv_al, fig.width=10}
+#' [Isolate survival data]
+surv_data <- full_data[,.(case_id, gene, 
+                          DAYS_LAST_FOLLOWUP, 
+                          disease_free_MONTHS_since_trtmnt = DFS_MONTHS, 
+                          disease_free_STATUS_since_trtmnt = DFS_STATUS, 
+                          disease_spec_survival_MONTHS = DSS_MONTHS, 
+                          disease_spec_survival_STATUS = DSS_STATUS, 
+                          overall_survival_MONTHS = OS_MONTHS, 
+                          overall_survival_STATUS = OS_STATUS, 
+                          progress_free_surv_MONTHS = PFS_MONTHS,
+                          progress_free_surv_STATUS = PFS_STATUS)]
+
 
 ```
 <br />
@@ -877,7 +889,158 @@ This data comes with information regarding several types of survival and other t
 
 ### Extraneous Analysis
 This is a feature rich dataset with a lot of extra data like sex data, tumor location data, etc. We can view the expression data by certain quantiles and see if associations between something like `low expression` and `remission` or something related.
-```{r extra}
+
+
+#### Data Summary Barcharts
+```{r barcharts}
+library(ggrepel)
+extr_data <- full_data[,.(case_id, AGE, ANEUPLOIDY_SCORE, CANCER_TYPE_DETAILED, 
+                          ETHNICITY, FRACTION_GENOME_ALTERED, MUTATION_COUNT,
+                          NEW_TUMOR_EVENT_AFTER_INITIAL_TREATMENT, RACE, SEX,
+                          TUMOR_TISSUE_SITE, TUMOR_TYPE, expr_TPM, gene)]
+
+#' @AGE plot
+ggplot(data = extr_data, mapping = aes(AGE)) +
+  geom_bar() +
+  theme_bw() +
+  ylim(0,70) +
+  scale_x_continuous(breaks=seq(20,100,5)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + 
+  geom_text_repel(stat = "count", mapping = aes(label = ..count.., color = "red"), vjust = -1) +
+  ggtitle("Age Distribution of Sarcoma Cases with LRP1 Data") +
+  ylab("Count") +
+  xlab("Age")
+
+#' @ANEUPLOIDY_SCORE plot
+ggplot(data = extr_data, mapping = aes(ANEUPLOIDY_SCORE)) +
+  geom_bar() +
+  theme_bw() +
+  ylim(0,80) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + 
+  geom_text_repel(stat = "count", mapping = aes(label = ..count.., color = "red"), vjust = -1, show.legend = FALSE) +
+  ggtitle("Aneuploidy Score Distribution of Sarcoma Cases with LRP1 Data") +
+  ylab("Count") +
+  xlab("Aneuploidy Scores")
+
+#' @CANCER_TYPE
+ggplot(data = extr_data, mapping = aes(CANCER_TYPE_DETAILED)) +
+  geom_bar(aes(group = CANCER_TYPE_DETAILED, fill = CANCER_TYPE_DETAILED)) +
+  theme_bw() +
+  ylim(0,550) +
+  theme(axis.text.x = element_blank(), legend.position = "bottom", legend.title = element_blank()) + 
+  geom_text_repel(stat = "count", mapping = aes(label = ..count.., color = "red"), vjust = -1, show.legend = FALSE) +
+  ggtitle("Cancer Types of Sarcoma Cases with LRP1 Data") +
+  ylab("Count") +
+  xlab("Cancer Types") +
+  scale_fill_brewer(palette = 1)
+
+#' @SEX
+ggplot(data = extr_data, mapping = aes(SEX)) +
+  geom_bar(aes(group = SEX, fill = SEX), show.legend = FALSE) +
+  theme_bw() +
+  geom_text_repel(stat = "count", mapping = aes(label = ..count.., color = "red"), vjust = -1, show.legend = FALSE) +
+  ggtitle("Sexes of Sarcoma Cases with LRP1 Data") +
+  ylab("Count") +
+  xlab("Sexes") +
+  scale_fill_brewer(palette = 1, direction = -1)
+
+#' @TUMOR_TISSUE_SITE
+ggplot(data = extr_data, mapping = aes(TUMOR_TISSUE_SITE)) +
+  geom_bar(aes(group = TUMOR_TISSUE_SITE, fill = TUMOR_TISSUE_SITE), show.legend = FALSE) +
+  theme_bw() +
+  ylim(0,400) +
+  geom_text_repel(stat = "count", mapping = aes(label = ..count.., color = "red"), vjust = -1, show.legend = FALSE) +
+  ggtitle("Tumor Tissue Sites of Sarcoma Cases with LRP1 Data") +
+  ylab("Count") +
+  xlab("Tissue Sites") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#' @TUMOR_TYPE
+ggplot(data = extr_data, mapping = aes(TUMOR_TYPE)) +
+  geom_bar(aes(TUMOR_TYPE), show.legend = FALSE) +
+  theme_bw() +
+  ylim(0,400) +
+  geom_text_repel(stat = "count", mapping = aes(label = ..count.., color = "red"), vjust = -1, show.legend = FALSE) +
+  ggtitle("Tumor Types of Sarcoma Cases with LRP1 Data") +
+  ylab("Count") +
+  xlab("Tumor Types") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#' @MUTATION_COUNT
+ggplot(data = extr_data, mapping = aes(MUTATION_COUNT)) +
+  geom_bar(aes(MUTATION_COUNT), show.legend = FALSE) +
+  theme_bw() +
+  #geom_text_repel(stat = "count", mapping = aes(label = ..count.., color = "red"), vjust = -1, show.legend = FALSE) +
+  ggtitle("Mutation Count Distribution of Sarcoma Cases with LRP1 Data") +
+  ylab("Count") +
+  xlab("Mutation Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#' @NEW_TUMOR_EVENT_AFTER_INITIAL_TREATMENT
+ggplot(data = extr_data, mapping = aes(NEW_TUMOR_EVENT_AFTER_INITIAL_TREATMENT)) +
+  geom_bar(aes(NEW_TUMOR_EVENT_AFTER_INITIAL_TREATMENT), show.legend = FALSE) +
+  theme_bw() +
+  ylim(0,650) +
+  geom_text_repel(stat = "count", mapping = aes(label = ..count.., color = "red"), vjust = -1, show.legend = FALSE) +
+  ggtitle("# New Tumor Events after Initial Treatment of Sarcoma Cases with LRP1 Data") +
+  ylab("Count") +
+  xlab("New Tumor Events Post Initial Treatment") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ```
+<br />
+<br />
 
+
+#### Data Summary Scatterplots
+This section of code looks at the continuous variable of LRP1 expression count and any available continuous variable in the dataset.
+```{r scatters}
+
+#' @AGE
+ggplot(data = extr_data[gene == "LRP1"], mapping = aes(x = expr_TPM, y = AGE)) +
+  geom_point(shape = 21) +
+  ggtitle("LRP1 expression vs Age") + 
+  theme_bw()
+
+#' @ANEUPLOIDY_SCORE
+ggplot(data = extr_data[gene == "LRP1"], mapping = aes(x = expr_TPM, y = ANEUPLOIDY_SCORE)) +
+  geom_point(shape = 21) +
+  ggtitle("LRP1 expression vs Aneuploidy Score") + 
+  theme_bw()
+
+#' @CANCER_TYPE_DETAILED
+ggplot(data = extr_data[gene == "LRP1"], mapping = aes(x = CANCER_TYPE_DETAILED, y = expr_TPM)) +
+  geom_violin(aes(goup = CANCER_TYPE_DETAILED, color = CANCER_TYPE_DETAILED), show.legend = FALSE) +
+  geom_jitter(position = position_jitter(0.1), shape = 21) +
+  ggtitle("LRP1 expression and Cancer Type Detailed") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+
+#' @FRACTION_GENOME_ALTERED
+ggplot(data = extr_data[gene == "LRP1"], mapping = aes(x = expr_TPM, y = FRACTION_GENOME_ALTERED)) +
+  geom_point(shape = 21) +
+  theme_bw() +
+  ggtitle("Fraction of Genome Altered vs LRP1 Expression Count")
+
+#' @MUTATION_COUNT
+ggplot(data = extr_data[gene == "LRP1"], mapping = aes(x = expr_TPM, y = MUTATION_COUNT)) +
+  geom_point(shape = 21) +
+  theme_bw() +
+  ggtitle("Mutation Count vs LRP1 Expression Count")
+
+#' @TUMOR_TISSUE_SITE
+ggplot(data = extr_data[gene == "LRP1"], mapping = aes(x = TUMOR_TISSUE_SITE, y = expr_TPM)) +
+  geom_jitter(position = position_jitter(0.1), shape = 21) +
+  ggtitle("LRP1 expression and Tumor Tissue Site") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+#' @TUMOR_TYPE
+ggplot(data = extr_data[gene == "LRP1"], mapping = aes(x = TUMOR_TYPE, y = expr_TPM)) +
+  geom_jitter(position = position_jitter(0.1), shape = 21) +
+  ggtitle("LRP1 expression and Tumor Type") + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+
+```
