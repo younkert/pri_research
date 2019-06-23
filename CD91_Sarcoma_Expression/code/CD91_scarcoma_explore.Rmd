@@ -163,6 +163,8 @@ full_data[, Pentile := factor(ntile(x = LRP1_ref, n = 5), levels = 5:1)]
 
 #' @remove columns used for the sake of assignment
 full_data[, LRP1_ref := NULL]
+
+full_data[, case_id := gsub(pattern = ".01", replacement = "", x = case_id)]
 ```
 <br />
 <br />
@@ -868,20 +870,68 @@ grid.arrange(e3, f3, ncol = 2)
 <br />
 
 ### Survival Analysis
-This data comes with information regarding several types of survival and other time series data amenable to Kaplan Meier analysis. This section of code examines these data.
+This data comes with information regarding several types of survival and other time series data amenable to Kaplan Meier analysis. This section of code examines these data. We can abritrarily divide the data into groups and use their common survival metric to see which group last longer than the other.
 ```{r surv_al, fig.width=10}
-#' [Isolate survival data]
-surv_data <- full_data[,.(case_id, gene, 
-                          DAYS_LAST_FOLLOWUP, 
-                          disease_free_MONTHS_since_trtmnt = DFS_MONTHS, 
-                          disease_free_STATUS_since_trtmnt = DFS_STATUS, 
-                          disease_spec_survival_MONTHS = DSS_MONTHS, 
-                          disease_spec_survival_STATUS = DSS_STATUS, 
-                          overall_survival_MONTHS = OS_MONTHS, 
-                          overall_survival_STATUS = OS_STATUS, 
-                          progress_free_surv_MONTHS = PFS_MONTHS,
-                          progress_free_surv_STATUS = PFS_STATUS)]
+#' [Load packages]
+p_load(survival, survminer)
 
+#' [Input and format survival data]
+OS_surv_raw <- fread(file = "/Users/Teddy/R/repos/pri_research/CD91_Sarcoma_Expression/data/input/Overall_Survival.txt")
+DS_surv_raw <- fread(file = "/Users/Teddy/R/repos/pri_research/CD91_Sarcoma_Expression/data/input/Disease_Free_Survival.txt")
+
+expression_attributes <- full_data[,.(case_id, gene, expr_TPM, Median, Tertile, Pentile)]
+expression_attributes <- dcast(data = expression_attributes, 
+                               formula = case_id+Median+Tertile+Pentile~gene, 
+                               value.var = "expr_TPM")
+
+#' @change names 
+setnames(x = OS_surv_raw, 
+         old = names(OS_surv_raw), 
+         new = c("case_id", "study_id", "number_at_risk", "status", "survival_rate", "time_(months)"))
+setnames(x = DS_surv_raw, 
+         old = names(DS_surv_raw), 
+         new = c("case_id", "study_id", "number_at_risk", "status", "survival_rate", "time_(months)"))
+
+#' @alter case_id's
+OS_surv_raw[, case_id := gsub(pattern = "-", replacement = ".", x = case_id)]
+DS_surv_raw[, case_id := gsub(pattern = "-", replacement = ".", x = case_id)]
+
+#' @merge in expression attributes to the survival data
+OS_surv <- merge(x = OS_surv_raw, y = expression_attributes, by = "case_id", all.x = TRUE)
+DS_surv <- merge(x = DS_surv_raw, y = expression_attributes, by = "case_id", all.x = TRUE)
+
+#' @Remove uneeded previous survival data
+OS_surv[, c("number_at_risk", "survival_rate") := NULL]
+DS_surv[, c("number_at_risk", "survival_rate") := NULL]
+
+#' @Classify status bases on [1: censored] and [2: dead]
+OS_surv[status == "censored", status := "1"]
+DS_surv[status == "censored", status := "1"]
+OS_surv[status == "deceased", status := "2"]
+DS_surv[status == "deceased", status := "2"]
+#Change to numeric
+OS_surv[, status := as.numeric(status)]
+DS_surv[, status := as.numeric(status)]
+
+#' @SURV object creation
+
+
+s <- Surv(OS_surv$`time_(months)`, OS_surv$status)
+survfit(s~1)
+survfit(Surv(`time_(months)`, status)~1, data=OS_surv)
+sfit <- survfit(Surv(`time_(months)`, status)~1, data=OS_surv)
+sfit
+summary(sfit)
+
+#' @Plot
+ggplot(data = OS_surv, aes(x = OS_surv$`time_(months)`, y = OS_surv$survival_rate)) +
+  geom_point() +
+  theme_bw()
+
+
+scatterPlot0 <- ggplot(OS_surv, aes(x = time_, y = finalUCEC$survivalEstimate, color = project_id)) + 
+                    geom_point(shape = 5, size = 0.75)
+scatterPlot0
 
 ```
 <br />
@@ -889,7 +939,6 @@ surv_data <- full_data[,.(case_id, gene,
 
 ### Extraneous Analysis
 This is a feature rich dataset with a lot of extra data like sex data, tumor location data, etc. We can view the expression data by certain quantiles and see if associations between something like `low expression` and `remission` or something related.
-
 
 #### Data Summary Barcharts
 ```{r barcharts}
